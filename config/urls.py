@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
@@ -26,7 +27,7 @@ schema_view = get_schema_view(
     openapi.Info(
         title="RoadVision AI API",
         default_version='v1',
-        description="Система обнаружения дефектов дорог с поддержкой offline и real-time",
+        description="Система обнаружения дефектов дорог",
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),
@@ -34,12 +35,18 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+
+    # docs
+    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0)),
+    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0)),
 
     # API
     path('api/auth/', include('apps.users.urls')),
     path('api/images/', include('apps.images.urls')),
     path('api/defects/', include('apps.defects.urls')),
+    path('api/cameras/', include('apps.cameras.urls')),
+    path('api/streams/', include('apps.streaming.urls')),
+    path('api/reports/', include('apps.reports.urls')),
 ]
 
 if settings.DEBUG:
