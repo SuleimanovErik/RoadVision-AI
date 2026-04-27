@@ -1,6 +1,6 @@
 from django.urls import path
-from .views import DefectsView
+from .views import DefectListView
 
 urlpatterns = [
-    path('', DefectsView.as_view()),
+    path("", DefectListView.as_view(), name="defect-list"),
 ]

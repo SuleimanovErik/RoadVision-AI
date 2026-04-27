@@ -1,11 +1,20 @@
 from django.shortcuts import render
 
-from drf_yasg.openapi import Response
+from rest_framework import generics, permissions
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .serializers import RegisterSerializer, UserSerializer
 
 # Create your views here.
 
-class UserView(APIView):
+
+class RegisterView(generics.CreateAPIView):
+    serializer_class = RegisterSerializer
+    permission_classes = [permissions.AllowAny]
+
+
+class MeView(APIView):
     def get(self, request):
-        return Response({"message": "test"})
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
