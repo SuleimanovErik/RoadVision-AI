@@ -7,13 +7,15 @@ from apps.defects.models import Defect
 @shared_task
 def process_image_task(image_id):
     image = RoadImage.objects.get(id=image_id)
+    response = analyze_image(image.image.path)
+    print("=== IMAGE CV RESULT ===", response)
 
-    result = analyze_image(image.image.path)
-
-    if "error" in result:
+    if "error" in response:
         image.delete()
         return
 
+    # Достаём вложенный result
+    result = response.get("result", response)
     detections = result.get("detections", [])
 
     if not detections:
@@ -34,31 +36,31 @@ def process_image_task(image_id):
         )
 
 
-
 @shared_task
 def process_video_task(video_id):
     video = RoadVideo.objects.get(id=video_id)
+    response = analyze_video(video.video.path)
+    print("=== VIDEO CV RESULT ===", response)
 
-    result = analyze_video(video.video.path)
-
-    # ❌ ошибка CV
-    if "error" in result:
+    if "error" in response:
+        print("=== ERROR, deleting video ===")
         video.delete()
         return
 
+    # Достаём вложенный result
+    result = response.get("result", response)
     frames = result.get("results", [])
 
     if not frames:
+        print("=== NO FRAMES, deleting video ===")
         video.video.delete()
         video.delete()
         return
 
     total_detections = 0
-
     for frame_data in frames:
         timestamp = frame_data.get("timestamp")
         detections = frame_data.get("detections", [])
-
         for d in detections:
             Defect.objects.create(
                 source_type="VIDEO",
@@ -69,11 +71,10 @@ def process_video_task(video_id):
                 severity=d["severity"],
                 latitude=video.latitude,
                 longitude=video.longitude,
-                timestamp_in_video=timestamp
+                timestamp_in_video=timestamp,
             )
             total_detections += 1
 
-    # ❌ если вдруг после фильтра ничего не осталось
     if total_detections == 0:
         video.video.delete()
         video.delete()
