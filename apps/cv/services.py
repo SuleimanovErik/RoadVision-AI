@@ -1,7 +1,7 @@
 import requests
 import os
 
-CV_SERVICE_URL = "http://192.168.0.106:8080"
+CV_SERVICE_URL = "http://192.168.0.125:1488"
 API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
 def analyze_image(image_path):
