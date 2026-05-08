@@ -3,7 +3,7 @@ import os
 
 CV_SERVICE_URL = "http://192.168.0.116:8080/"
 API_KEY = os.environ.get("INTERNAL_API_KEY", "")
-print(API_KEY)
+
 
 def analyze_image(image_path):
     with open(image_path, "rb") as f:
