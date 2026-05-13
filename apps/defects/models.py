@@ -2,6 +2,13 @@ from django.db import models
 from apps.images.models import RoadImage, RoadVideo
 from apps.streaming.models import StreamSession
 from apps.users.models import User
+class Meta:
+    unique_together = [
+        # один и тот же дефект на одном кадре видео
+        ["road_video", "defect_type", "timestamp_in_video", "bbox"],
+        # один и тот же дефект на изображении
+        ["road_image", "defect_type", "bbox"],
+    ]
 
 
 class Defect(models.Model):

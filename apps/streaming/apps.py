@@ -2,4 +2,6 @@ from django.apps import AppConfig
 
 
 class StreamingConfig(AppConfig):
-    name = 'apps.streaming'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.streaming"
+    verbose_name = "Стриминг"

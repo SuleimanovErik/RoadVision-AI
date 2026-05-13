@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    const resp = await fetch(`${API_URL}/detect/image`, {
+    method: "POST",
+    headers: {
+        "X-API-Key": API_KEY,
+        "ngrok-skip-browser-warning": "true"
+    },
+    body: form,
+});
+    <title>Road AI — Live Detection</title>
+    <style>
+        body { margin: 0; background: #1a1a1a; color: white; font-family: monospace; }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        video { width: 100%; border-radius: 8px; }
+        canvas { display: none; }
+        .controls { margin: 10px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+        button { padding: 10px 20px; border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        button.start { background: #27ae60; }
+        button.stop { background: #e74c3c; }
+        button.flip { background: #2980b9; }
+        #status { padding: 8px; background: #2c2c2c; border-radius: 4px; margin: 10px 0; }
+        .defect { background: #2c2c2c; padding: 10px; margin: 5px 0; border-radius: 4px; border-left: 4px solid #e74c3c; }
+        .defect.medium { border-color: #f39c12; }
+        .defect.low { border-color: #27ae60; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Road AI — Live Detection</h2>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <div class="controls">
+        <button class="start" onclick="startCamera()">▶ Запустить камеру</button>
+        <button class="stop" onclick="stopCamera()">■ Стоп</button>
+        <button class="flip" onclick="flipCamera()">🔄 Камера</button>
+        <select id="interval">
+            <option value="2000">каждые 2 сек</option>
+            <option value="5000">каждые 5 сек</option>
+            <option value="10000">каждые 10 сек</option>
+        </select>
+    </div>
+    <div id="status">Камера не запущена</div>
+    <div id="results"></div>
+</div>
+<script>
+    const API_URL = "https://equity-directory-palm.ngrok-free.dev";
+    const API_KEY = "{{ api_key }}";
+
+    let stream = null;
+    let timer = null;
+    let facingMode = "environment";  // задняя камера по умолчанию
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const status = document.getElementById("status");
+    const results = document.getElementById("results");
+
+    async function startCamera() {
+        if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+        }
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: facingMode }
+            });
+            video.srcObject = stream;
+            status.textContent = "✅ Камера запущена (" + (facingMode === "environment" ? "задняя" : "передняя") + ")";
+
+            if (timer) clearInterval(timer);
+            const interval = parseInt(document.getElementById("interval").value);
+            timer = setInterval(sendFrame, interval);
+        } catch (e) {
+            // Если задняя недоступна — пробуем любую
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                status.textContent = "✅ Камера запущена";
+                if (timer) clearInterval(timer);
+                const interval = parseInt(document.getElementById("interval").value);
+                timer = setInterval(sendFrame, interval);
+            } catch (e2) {
+                status.textContent = "❌ Ошибка: " + e2.message;
+            }
+        }
+    }
+
+    async function flipCamera() {
+        facingMode = facingMode === "environment" ? "user" : "environment";
+        if (stream) {
+            await startCamera();  // перезапускаем с новой камерой
+        }
+    }
+
+    function stopCamera() {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        if (timer) clearInterval(timer);
+        stream = null;
+        status.textContent = "Камера остановлена";
+    }
+
+    async function sendFrame() {
+        if (!stream) return;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+        canvas.toBlob(async (blob) => {
+            const form = new FormData();
+            form.append("file", blob, "frame.jpg");
+            try {
+                status.textContent = "⏳ Анализирую кадр...";
+                const resp = await fetch(`${API_URL}/detect/image`, {
+                    method: "POST",
+                    headers: { "X-API-Key": API_KEY },
+                    body: form,
+                });
+                const data = await resp.json();
+                showResults(data);
+            } catch (e) {
+                status.textContent = "❌ Ошибка: " + e.message;
+            }
+        }, "image/jpeg", 0.8);
+    }
+
+    function showResults(data) {
+        const detections = data?.result?.detections || [];
+        status.textContent = "✅ Найдено дефектов: " + detections.length;
+        if (!detections.length) {
+            results.innerHTML = "<div class='defect low'>Дефектов не обнаружено</div>";
+            return;
+        }
+        results.innerHTML = detections.map(d => `
+            <div class="defect ${d.severity}">
+                <b>${d.class_name}</b> —
+                уверенность: ${(d.confidence * 100).toFixed(1)}% —
+                серьёзность: ${d.severity}
+            </div>
+        `).join("");
+    }
+</script>
+</body>
+</html>

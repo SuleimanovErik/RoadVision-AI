@@ -26,13 +26,15 @@ SECRET_KEY = 'django-insecure-(v4n05f0okro^j57*cnxazzxkvr%^9a6p74hbr2)m2*sk1by6t
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
 
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
+load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -40,7 +42,6 @@ SECRET_KEY = 'django-insecure-change-me'
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
 
 # ======================
 # APPLICATIONS
@@ -62,6 +63,7 @@ INSTALLED_APPS = [
     'drf_yasg',
     'django_filters',
     'channels',
+    "sslserver",
 
     # local apps
     'apps.core',
@@ -158,14 +160,14 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],  # можно потом добавить templates/
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',  # ОБЯЗАТЕЛЬНО
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [BASE_DIR / "templates"],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",  # без 's' в template
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
@@ -194,7 +196,7 @@ REST_FRAMEWORK = {
 # ======================
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'AUTH_HEADER_TYPES': ('Bearer',),
 }

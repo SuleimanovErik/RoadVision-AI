@@ -1,7 +1,10 @@
-from django.urls import path
-from .views import CameraListCreateView, CameraDeleteView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import CameraViewSet
+
+router = DefaultRouter()
+router.register(r"cameras", CameraViewSet, basename="camera")
 
 urlpatterns = [
-    path('', CameraListCreateView.as_view()),
-    path('<int:pk>/', CameraDeleteView.as_view()),
+    path("", include(router.urls)),
 ]
