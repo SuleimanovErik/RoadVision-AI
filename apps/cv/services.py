@@ -2,7 +2,7 @@ import requests
 import os
 
 
-CV_SERVICE_URL = "http://192.168.0.125:1488"
+CV_SERVICE_URL = "http://127.0.0.1:1488"
 API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
 

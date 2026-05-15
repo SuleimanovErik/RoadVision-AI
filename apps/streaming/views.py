@@ -9,9 +9,13 @@ from django.shortcuts import render
 import os
 
 
+
 def camera_view(request):
+    from rest_framework_simplejwt.tokens import AccessToken
+    token = str(AccessToken.for_user(request.user)) if request.user.is_authenticated else ""
     return render(request, "camera.html", {
-        "api_key": os.environ.get("INTERNAL_API_KEY", "")
+        "api_key": os.environ.get("INTERNAL_API_KEY", ""),
+        "token": token,
     })
 
 

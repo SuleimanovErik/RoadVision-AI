@@ -1,14 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-    const resp = await fetch(`${API_URL}/detect/image`, {
-    method: "POST",
-    headers: {
-        "X-API-Key": API_KEY,
-        "ngrok-skip-browser-warning": "true"
-    },
-    body: form,
-});
     <title>Road AI — Live Detection</title>
     <style>
         body { margin: 0; background: #1a1a1a; color: white; font-family: monospace; }
@@ -21,13 +13,13 @@
         button.stop { background: #e74c3c; }
         button.flip { background: #2980b9; }
         #status { padding: 8px; background: #2c2c2c; border-radius: 4px; margin: 10px 0; }
+        #geo { padding: 8px; background: #2c2c2c; border-radius: 4px; margin: 10px 0; font-size: 12px; }
         .defect { background: #2c2c2c; padding: 10px; margin: 5px 0; border-radius: 4px; border-left: 4px solid #e74c3c; }
         .defect.medium { border-color: #f39c12; }
         .defect.low { border-color: #27ae60; }
     </style>
 </head>
 <body>
-
 <div class="container">
     <h2>Road AI — Live Detection</h2>
     <video id="video" autoplay playsinline></video>
@@ -42,56 +34,94 @@
             <option value="10000">каждые 10 сек</option>
         </select>
     </div>
+    <div id="geo">📍 Геолокация: определяется...</div>
     <div id="status">Камера не запущена</div>
     <div id="results"></div>
 </div>
 <script>
-    const API_URL = "https://equity-directory-palm.ngrok-free.dev";
+    const CV_URL = "https://192.168.1.17:1488";
+    const DJANGO_URL = "";
     const API_KEY = "{{ api_key }}";
+    const DJANGO_TOKEN = "{{ token }}";  // JWT токен
 
     let stream = null;
     let timer = null;
-    let facingMode = "environment";  // задняя камера по умолчанию
+    let facingMode = "environment";
+    let currentLat = null;
+    let currentLng = null;
 
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const status = document.getElementById("status");
     const results = document.getElementById("results");
+    const geoDiv = document.getElementById("geo");
+async function saveDefect(detection) {
+    if (!currentLat || !currentLng) {
+        console.log("NO GEO — пропускаем сохранение");
+        return;
+    }
+    try {
+        console.log("Сохраняю дефект:", detection);
+        const resp = await fetch(`${DJANGO_URL}/api/defects/live/`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${DJANGO_TOKEN}`,
+            },
+            body: JSON.stringify({
+                defect_type: detection.class_name.toUpperCase(),
+                confidence: detection.confidence,
+                bbox: detection.bbox,
+                severity: detection.severity,
+                latitude: currentLat,
+                longitude: currentLng,
+                source_type: "STREAM",
+            }),
+        });
+        const data = await resp.json();
+        console.log("Ответ сервера:", resp.status, data);
+    } catch (e) {
+        console.error("Ошибка сохранения:", e);
+    }
+}
+    // Геолокация
+    function startGeo() {
+        if (!navigator.geolocation) {
+            geoDiv.textContent = "📍 Геолокация не поддерживается";
+            return;
+        }
+        navigator.geolocation.watchPosition(
+            (pos) => {
+                currentLat = pos.coords.latitude;
+                currentLng = pos.coords.longitude;
+                geoDiv.textContent = `📍 ${currentLat.toFixed(6)}, ${currentLng.toFixed(6)} (точность: ${pos.coords.accuracy.toFixed(0)}м)`;
+            },
+            (err) => {
+                geoDiv.textContent = "📍 Ошибка геолокации: " + err.message;
+            },
+            { enableHighAccuracy: true, maximumAge: 5000 }
+        );
+    }
 
     async function startCamera() {
-        if (stream) {
-            stream.getTracks().forEach(t => t.stop());
-        }
+        if (stream) stream.getTracks().forEach(t => t.stop());
         try {
             stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: facingMode }
             });
             video.srcObject = stream;
             status.textContent = "✅ Камера запущена (" + (facingMode === "environment" ? "задняя" : "передняя") + ")";
-
             if (timer) clearInterval(timer);
             const interval = parseInt(document.getElementById("interval").value);
             timer = setInterval(sendFrame, interval);
         } catch (e) {
-            // Если задняя недоступна — пробуем любую
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = stream;
-                status.textContent = "✅ Камера запущена";
-                if (timer) clearInterval(timer);
-                const interval = parseInt(document.getElementById("interval").value);
-                timer = setInterval(sendFrame, interval);
-            } catch (e2) {
-                status.textContent = "❌ Ошибка: " + e2.message;
-            }
+            status.textContent = "❌ Ошибка: " + e.message;
         }
     }
 
     async function flipCamera() {
         facingMode = facingMode === "environment" ? "user" : "environment";
-        if (stream) {
-            await startCamera();  // перезапускаем с новой камерой
-        }
+        if (stream) await startCamera();
     }
 
     function stopCamera() {
@@ -106,39 +136,75 @@
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext("2d").drawImage(video, 0, 0);
+
         canvas.toBlob(async (blob) => {
             const form = new FormData();
             form.append("file", blob, "frame.jpg");
             try {
                 status.textContent = "⏳ Анализирую кадр...";
-                const resp = await fetch(`${API_URL}/detect/image`, {
+                const resp = await fetch(`${CV_URL}/detect/image`, {
                     method: "POST",
-                    headers: { "X-API-Key": API_KEY },
+                    headers: {
+                        "X-API-Key": API_KEY,
+                        "ngrok-skip-browser-warning": "true"
+                    },
                     body: form,
                 });
                 const data = await resp.json();
-                showResults(data);
+                await showResults(data);
             } catch (e) {
                 status.textContent = "❌ Ошибка: " + e.message;
             }
         }, "image/jpeg", 0.8);
     }
 
-    function showResults(data) {
+    async function saveDefect(detection) {
+        if (!currentLat || !currentLng) return;
+        try {
+            await fetch(`${DJANGO_URL}/api/defects/live/`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${DJANGO_TOKEN}`,
+                },
+                body: JSON.stringify({
+                    defect_type: detection.class_name.toUpperCase(),
+                    confidence: detection.confidence,
+                    bbox: detection.bbox,
+                    severity: detection.severity,
+                    latitude: currentLat,
+                    longitude: currentLng,
+                    source_type: "STREAM",
+                }),
+            });
+        } catch (e) {
+            console.error("Ошибка сохранения дефекта:", e);
+        }
+    }
+
+    async function showResults(data) {
         const detections = data?.result?.detections || [];
         status.textContent = "✅ Найдено дефектов: " + detections.length;
         if (!detections.length) {
             results.innerHTML = "<div class='defect low'>Дефектов не обнаружено</div>";
             return;
         }
+        // Сохраняем каждый дефект в БД
+        for (const d of detections) {
+            await saveDefect(d);
+        }
         results.innerHTML = detections.map(d => `
             <div class="defect ${d.severity}">
                 <b>${d.class_name}</b> —
                 уверенность: ${(d.confidence * 100).toFixed(1)}% —
                 серьёзность: ${d.severity}
+                ${currentLat ? `<br>📍 ${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}` : ""}
             </div>
         `).join("");
     }
+
+    // Запускаем геолокацию сразу
+    startGeo();
 </script>
 </body>
 </html>
