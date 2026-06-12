@@ -38,19 +38,6 @@
   .btn-row  { display: flex; gap: 8px; margin-top: 8px; }
   .btn-row .btn { flex: 1; }
 
-  /* badges */
-  .badge { display: inline-block; padding: 2px 7px; border-radius: 99px; font-size: 10px; font-weight: 700; }
-  .badge-idle    { background: #222; color: #777; }
-  .badge-running { background: #14532d; color: #4ade80; }
-  .badge-error   { background: #450a0a; color: #f87171; }
-  .badge-stopped { background: #1c1917; color: #888; }
-
-  /* sessions */
-  .session-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #222; font-size: 12px; gap: 6px; }
-  .session-row:last-child { border-bottom: none; }
-  .session-name { color: #ddd; font-weight: 500; }
-  .session-meta { color: #555; font-size: 11px; }
-
   /* tabs */
   .tabs { display: flex; border: 1px solid #2a2a2a; border-radius: 7px; overflow: hidden; margin-bottom: 12px; }
   .tab { flex: 1; background: none; border: none; color: #666; padding: 7px; font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -58,8 +45,6 @@
 
   /* defects */
   .defect-item { padding: 5px 8px; margin: 3px 0; background: #1f1f1f; border-left: 3px solid #dc2626; border-radius: 4px; font-size: 11px; }
-  .defect-item.medium { border-color: #f59e0b; }
-  .defect-item.low    { border-color: #22c55e; }
   #defectsList { max-height: 120px; overflow-y: auto; margin-top: 6px; }
 
   /* log */
@@ -69,8 +54,6 @@
 
   #authNote { font-size: 12px; text-align: center; margin-top: 6px; }
   #videoMeta { margin-top: 8px; display: flex; gap: 10px; align-items: center; }
-
-  /* interval selector */
   .interval-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #666; }
   .interval-row select { width: auto; padding: 4px 8px; font-size: 12px; }
 </style>
@@ -79,7 +62,6 @@
 <h1>RoadVision AI — Stream Monitor</h1>
 <div class="layout">
 
-  <!-- LEFT: video -->
   <div>
     <div class="video-box" id="videoBox">
       <video id="video" autoplay muted playsinline></video>
@@ -94,10 +76,8 @@
     </div>
   </div>
 
-  <!-- RIGHT: panel -->
   <div class="panel">
 
-    <!-- Auth -->
     <div class="card">
       <h2>Авторизация</h2>
       <label>Email</label>
@@ -111,7 +91,6 @@
       <div id="authNote"></div>
     </div>
 
-    <!-- Video source -->
     <div class="card">
       <h2>Источник видео</h2>
       <div class="tabs">
@@ -131,56 +110,25 @@
           </select>
         </div>
         <div class="btn-row">
-          <button class="btn btn-blue" id="btnWebcam">Запустить</button>
+          <button class="btn btn-blue" id="btnWebcam">Запустить веб-камеру</button>
         </div>
       </div>
 
       <div id="panelRtsp" style="display:none">
         <label>RTSP URL</label>
         <input type="text" id="inputRtsp" placeholder="rtsp://192.168.1.100:554/stream"/>
-        <p style="font-size:11px;color:#444;margin-top:4px;">RTSP обрабатывается сервером, не браузером</p>
+        <p style="font-size:11px;color:#555;margin-top:4px;">Обрабатывается сервером через Celery/YOLO</p>
         <div class="btn-row">
           <button class="btn btn-blue" id="btnSendRtsp">Отправить на сервер</button>
         </div>
       </div>
     </div>
 
-    <!-- Add camera -->
-    <div class="card">
-      <h2>Добавить камеру</h2>
-      <label>Название</label>
-      <input type="text" id="inputCamName" placeholder="Webcam Local"/>
-      <label>RTSP URL</label>
-      <input type="text" id="inputCamRtsp" placeholder="webcam://local или rtsp://..."/>
-      <label>Широта</label>
-      <input type="text" id="inputCamLat" placeholder="42.870000"/>
-      <label>Долгота</label>
-      <input type="text" id="inputCamLng" placeholder="74.590000"/>
-      <div class="btn-row" style="margin-top:8px;">
-        <button class="btn btn-blue" id="btnAddCamera">+ Добавить камеру</button>
-      </div>
-    </div>
-
-    <!-- Sessions -->
-    <div class="card">
-      <h2>Сессии стриминга</h2>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <select id="selectCamForSession" style="flex:1;font-size:12px;padding:6px 8px;"></select>
-        <button class="btn btn-gray btn-sm" id="btnCreateSession">+ Создать</button>
-      </div>
-      <div id="sessionsList" style="margin-top:10px;min-height:30px;font-size:12px;color:#555;">
-        Войдите чтобы загрузить сессии
-      </div>
-      <button class="btn btn-gray" style="margin-top:8px;font-size:12px;" id="btnRefresh">Обновить</button>
-    </div>
-
-    <!-- Detections -->
     <div class="card">
       <h2>Детекции <span id="defectCount" style="color:#f87171;"></span></h2>
       <div id="defectsList"><span style="color:#444;font-size:11px;">Ожидание...</span></div>
     </div>
 
-    <!-- Log -->
     <div class="card">
       <h2>Лог</h2>
       <div id="log"></div>
@@ -190,8 +138,9 @@
 </div>
 
 <script>
-const BASE = 'http://localhost:8000';
+const BASE = 'http://' + window.location.hostname + ':8000';
 let token = localStorage.getItem('rv_token') || '';
+const targetSessionId = 1; // Дефолтное ID сессии для тестов в обход списков
 
 // ── geo ───────────────────────────────────────────────────────────────────────
 let currentLat = null;
@@ -203,8 +152,7 @@ let currentLng = null;
     function(pos) {
       currentLat = pos.coords.latitude;
       currentLng = pos.coords.longitude;
-      document.getElementById('geoLabel').textContent =
-        '📍 ' + currentLat.toFixed(5) + ', ' + currentLng.toFixed(5);
+      document.getElementById('geoLabel').textContent = '📍 ' + currentLat.toFixed(5) + ', ' + currentLng.toFixed(5);
     },
     function(err) {
       document.getElementById('geoLabel').textContent = '📍 ' + err.message;
@@ -262,8 +210,6 @@ document.getElementById('btnLogin').onclick = async function() {
     localStorage.setItem('rv_token', token);
     setNote('Авторизован: ' + u, true);
     log('Токен получен', 'info');
-    loadCameras();
-    loadSessions();
   } else {
     setNote('Ошибка: ' + ((r.data && r.data.detail) || r.status), false);
   }
@@ -273,47 +219,9 @@ document.getElementById('btnLogout').onclick = function() {
   token = '';
   localStorage.removeItem('rv_token');
   setNote('Токен удалён', false);
-  document.getElementById('sessionsList').textContent = 'Войдите чтобы загрузить сессии';
 };
 
-if (token) {
-  setNote('Токен из localStorage', true);
-  loadCameras();
-  loadSessions();
-}
-
-// ── cameras ───────────────────────────────────────────────────────────────────
-async function loadCameras() {
-  const r = await req('GET', '/api/cameras/');
-  if (!r.ok) return;
-  const items = Array.isArray(r.data) ? r.data : ((r.data && r.data.results) || []);
-  const sel = document.getElementById('selectCamForSession');
-  sel.innerHTML = '<option value="">-- камера --</option>';
-  items.forEach(function(c) {
-    const o = document.createElement('option');
-    o.value = c.id;
-    o.textContent = c.name || 'Camera #' + c.id;
-    sel.appendChild(o);
-  });
-}
-
-document.getElementById('btnAddCamera').onclick = async function() {
-  const name = document.getElementById('inputCamName').value.trim();
-  const rtsp = document.getElementById('inputCamRtsp').value.trim();
-  const lat  = document.getElementById('inputCamLat').value.trim();
-  const lng  = document.getElementById('inputCamLng').value.trim();
-  if (!name || !rtsp || !lat || !lng) { log('Заполни все поля камеры', 'err'); return; }
-  const r = await req('POST', '/api/cameras/cameras/', {
-    name: name, rtsp_url: rtsp, latitude: lat, longitude: lng,
-  });
-  if (r.ok) {
-    log('Камера "' + name + '" создана (ID:' + r.data.id + ')', 'info');
-    ['inputCamName','inputCamRtsp','inputCamLat','inputCamLng'].forEach(function(id) {
-      document.getElementById(id).value = '';
-    });
-    loadCameras();
-  }
-};
+if (token) setNote('Токен из localStorage', true);
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 var activeWs = null;
@@ -323,14 +231,14 @@ function connectWs(sessionId) {
   if (activeWs && activeWsSessionId === sessionId) return;
   if (activeWs) { activeWs.close(); activeWs = null; }
 
-  const wsUrl = 'ws://localhost:8000/ws/stream/' + sessionId + '/';
-  log('WS → сессия #' + sessionId, 'info');
+  const wsUrl = 'ws://' + window.location.hostname + ':8000/ws/stream/' + sessionId + '/';
+  log('WS → подписка на сессию #' + sessionId, 'info');
   const ws = new WebSocket(wsUrl);
   activeWs = ws;
   activeWsSessionId = sessionId;
 
   ws.onopen = function() {
-    log('WS подключён', 'info');
+    log('WS соединение установлено', 'info');
     document.getElementById('videoLabel').textContent = 'Stream #' + sessionId;
   };
 
@@ -338,7 +246,6 @@ function connectWs(sessionId) {
     try {
       const msg = JSON.parse(e.data);
       if (msg.error) { log('WS: ' + msg.error, 'err'); return; }
-      // детекция от Celery через channel layer
       if (msg.defect_type) {
         addDetection(msg);
         drawBbox(msg.bbox, msg.defect_type, msg.confidence);
@@ -368,9 +275,8 @@ function addDetection(d) {
   const box = document.getElementById('defectsList');
   const el = document.createElement('div');
   el.className = 'defect-item ' + (d.severity || 'high');
-  el.textContent = d.defect_type + ' — ' + (d.confidence * 100).toFixed(1) + '% — ' + (d.severity || '');
+  el.textContent = d.defect_type + ' — ' + (d.confidence * 100).toFixed(1) + '%';
   box.insertBefore(el, box.firstChild);
-  // оставляем только 20 последних
   while (box.children.length > 20) box.removeChild(box.lastChild);
 }
 
@@ -404,79 +310,12 @@ function drawBbox(bbox, label, confidence) {
   ctx.fillStyle = '#fff';
   ctx.fillText(text, x1 + 4, y1 - 4);
 
-  // убираем bbox через 3 секунды
   if (bboxTimeout) clearTimeout(bboxTimeout);
   bboxTimeout = setTimeout(function() { ctx.clearRect(0, 0, canvas.width, canvas.height); }, 3000);
 }
 
-// ── sessions ──────────────────────────────────────────────────────────────────
-async function loadSessions() {
-  const r = await req('GET', '/api/streams/streaming/');
-  const box = document.getElementById('sessionsList');
-  if (!r.ok) { box.textContent = 'Ошибка загрузки'; return; }
-  const items = Array.isArray(r.data) ? r.data : ((r.data && r.data.results) || []);
-  if (!items.length) { box.textContent = 'Сессий нет'; return; }
-  box.innerHTML = '';
-  items.forEach(function(s) {
-    const row = document.createElement('div');
-    row.className = 'session-row';
-    const canStart = s.status === 'idle' || s.status === 'stopped' || s.status === 'error';
-
-    // автоподключение WS для running сессии
-    if (s.status === 'running' && s.id !== activeWsSessionId) {
-      connectWs(s.id);
-    }
-
-    row.innerHTML =
-      '<div>' +
-        '<div class="session-name">' + (s.camera_name || 'Camera #' + s.camera) + '</div>' +
-        '<div class="session-meta">ID:' + s.id +
-          (s.resolution ? ' · ' + s.resolution : '') +
-          (s.fps ? ' · ' + s.fps.toFixed(1) + 'fps' : '') +
-        '</div>' +
-      '</div>' +
-      '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0">' +
-        '<span class="badge badge-' + s.status + '">' + s.status + '</span>' +
-        (canStart
-          ? '<button class="btn btn-blue btn-sm" onclick="startSession(' + s.id + ')">Start</button>'
-          : '<button class="btn btn-red btn-sm" onclick="stopSession(' + s.id + ')">Stop</button>') +
-        '<button class="btn btn-gray btn-sm" onclick="delSession(' + s.id + ')">Del</button>' +
-      '</div>';
-    box.appendChild(row);
-  });
-}
-
-document.getElementById('btnCreateSession').onclick = async function() {
-  const cam = document.getElementById('selectCamForSession').value;
-  if (!cam) { log('Выбери камеру', 'err'); return; }
-  const r = await req('POST', '/api/streams/streaming/', { camera: parseInt(cam) });
-  if (r.ok) { log('Сессия #' + r.data.id + ' создана', 'info'); loadSessions(); }
-};
-
-document.getElementById('btnRefresh').onclick = loadSessions;
-
-async function startSession(id) {
-  const rtsp = document.getElementById('inputRtsp').value.trim();
-  await req('POST', '/api/streams/streaming/' + id + '/start/', rtsp ? { rtsp_url: rtsp } : {});
-  setTimeout(loadSessions, 700);
-}
-
-async function stopSession(id) {
-  stopFrameSending();
-  disconnectWs();
-  await req('POST', '/api/streams/streaming/' + id + '/stop/');
-  setTimeout(loadSessions, 700);
-}
-
-async function delSession(id) {
-  if (!confirm('Удалить сессию #' + id + '?')) return;
-  await req('DELETE', '/api/streams/streaming/' + id + '/');
-  loadSessions();
-}
-
 // ── webcam + frame sending ────────────────────────────────────────────────────
 var camStream = null;
-var webcamSessionId = null;
 var frameTimer = null;
 var frameCanvas = document.createElement('canvas');
 
@@ -488,7 +327,7 @@ function startFrameSending(sessionId) {
   stopFrameSending();
   const interval = parseInt(document.getElementById('frameInterval').value);
   frameTimer = setInterval(function() { sendFrame(sessionId); }, interval);
-  log('Отправка кадров каждые ' + (interval / 1000) + 'с', 'info');
+  log('Запущена отправка кадров в YOLO (' + (interval / 1000) + 'с)', 'info');
 }
 
 function sendFrame(sessionId) {
@@ -504,12 +343,10 @@ function sendFrame(sessionId) {
     const reader = new FileReader();
     reader.onloadend = async function() {
       const base64 = reader.result.split(',')[1];
-      const lat = currentLat || 0;
-      const lng = currentLng || 0;
       await req('POST', '/api/streams/streaming/' + sessionId + '/frame/', {
         frame: base64,
-        latitude: lat,
-        longitude: lng,
+        latitude: currentLat || 0.0,
+        longitude: currentLng || 0.0
       });
     };
     reader.readAsDataURL(blob);
@@ -521,40 +358,30 @@ function sendFrame(sessionId) {
     await navigator.mediaDevices.getUserMedia({ video: true });
     const devs = await navigator.mediaDevices.enumerateDevices();
     const sel = document.getElementById('selectCam');
+    sel.innerHTML = '';
     devs.filter(function(d) { return d.kind === 'videoinput'; }).forEach(function(d, i) {
       const o = document.createElement('option');
       o.value = d.deviceId;
       o.textContent = d.label || 'Камера ' + (i + 1);
       sel.appendChild(o);
     });
-  } catch(e) { log('getUserMedia: ' + e.message, 'err'); }
+  } catch(e) { log('Ошибка перечисления камер: ' + e.message, 'err'); }
 })();
 
 document.getElementById('btnWebcam').onclick = async function() {
   const btn = document.getElementById('btnWebcam');
 
-  // СТОП
   if (camStream) {
     camStream.getTracks().forEach(function(t) { t.stop(); });
     camStream = null;
     document.getElementById('video').srcObject = null;
     document.getElementById('videoLabel').textContent = 'No source';
     document.getElementById('streamStatus').textContent = '';
-    btn.textContent = 'Запустить';
+    btn.textContent = 'Запустить веб-камеру';
+    btn.className = 'btn btn-blue';
     stopFrameSending();
     disconnectWs();
-    if (webcamSessionId) {
-      await req('POST', '/api/streams/streaming/' + webcamSessionId + '/stop/');
-      webcamSessionId = null;
-      setTimeout(loadSessions, 500);
-    }
-    return;
-  }
-
-  // СТАРТ
-  const camId = document.getElementById('selectCamForSession').value;
-  if (!camId) {
-    log('Выбери камеру в блоке "Сессии стриминга" перед запуском', 'err');
+    log('Поток остановлен', 'info');
     return;
   }
 
@@ -564,44 +391,34 @@ document.getElementById('btnWebcam').onclick = async function() {
       video: deviceId ? { deviceId: { exact: deviceId } } : true
     });
     document.getElementById('video').srcObject = camStream;
-    document.getElementById('videoLabel').textContent = 'Webcam';
-    document.getElementById('streamStatus').textContent = 'Webcam активна';
-    btn.textContent = 'Остановить';
-    log('Webcam запущена', 'info');
+    document.getElementById('videoLabel').textContent = 'Webcam (Активна)';
+    document.getElementById('streamStatus').textContent = 'Поток идет напрямую';
+    btn.textContent = 'Остановить веб-камеру';
+    btn.className = 'btn btn-red';
+    log('Браузер захватил видеопоток', 'info');
 
-    // создаём сессию и запускаем
-    const cr = await req('POST', '/api/streams/streaming/', { camera: parseInt(camId) });
-    if (cr.ok) {
-      webcamSessionId = cr.data.id;
-      await req('POST', '/api/streams/streaming/' + webcamSessionId + '/start/', { rtsp_url: 'webcam://local' });
-      log('Сессия #' + webcamSessionId + ' создана (webcam)', 'info');
+    connectWs(targetSessionId);
+    await req('POST', '/api/streams/streaming/' + targetSessionId + '/start/', { rtsp_url: 'webcam://local' });
+    setTimeout(function() { startFrameSending(targetSessionId); }, 1000);
 
-      // подключаем WS для получения детекций
-      connectWs(webcamSessionId);
-
-      // начинаем слать кадры на бэкенд
-      setTimeout(function() { startFrameSending(webcamSessionId); }, 1000);
-      setTimeout(loadSessions, 800);
-    }
   } catch(e) {
-    log('Камера: ' + e.message, 'err');
+    log('Ошибка доступа к камере: ' + e.message, 'err');
   }
 };
 
-// ── RTSP ──────────────────────────────────────────────────────────────────────
+// ── RTSP Прямой запуск ────────────────────────────────────────────────────────
 document.getElementById('btnSendRtsp').onclick = async function() {
   const url = document.getElementById('inputRtsp').value.trim();
   if (!url) { log('Введи RTSP URL', 'err'); return; }
-  const r = await req('GET', '/api/streams/streaming/');
-  if (!r.ok) return;
-  const items = Array.isArray(r.data) ? r.data : ((r.data && r.data.results) || []);
-  const idle = items.find(function(s) {
-    return s.status === 'idle' || s.status === 'stopped' || s.status === 'error';
-  });
-  if (!idle) { log('Нет свободной сессии — создай сначала', 'err'); return; }
-  await req('POST', '/api/streams/streaming/' + idle.id + '/start/', { rtsp_url: url });
-  document.getElementById('videoLabel').textContent = 'RTSP → server';
-  setTimeout(loadSessions, 800);
+
+  log('Отправка RTSP потока на сервер...', 'info');
+  document.getElementById('videoLabel').textContent = 'RTSP Stream';
+
+  // Подключаем WS для прослушивания ответов от Celery по этой сессии
+  connectWs(targetSessionId);
+
+  // Шлем запрос на старт сессии с указанным URL
+  await req('POST', '/api/streams/streaming/' + targetSessionId + '/start/', { rtsp_url: url });
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -632,4 +449,3 @@ document.getElementById('btnFullscreen').onclick = function() {
 </script>
 </body>
 </html>
-
