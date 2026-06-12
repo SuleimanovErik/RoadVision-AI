@@ -4,6 +4,12 @@ from django.conf import settings
 # Create your models here.
 
 class RoadImage(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидание"
+        PROCESSING = "processing", "Обрабатывается"
+        COMPLETED = "completed", "Завершено"
+        FAILED = "failed", "Ошибка"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -31,7 +37,20 @@ class RoadImage(models.Model):
     def __str__(self):
         return f"Image {self.id} by {self.user}"
 
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+
 class RoadVideo(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидание"
+        PROCESSING = "processing", "Обрабатывается"
+        COMPLETED = "completed", "Завершено"
+        FAILED = "failed", "Ошибка"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -57,3 +76,10 @@ class RoadVideo(models.Model):
 
     def __str__(self):
         return f"Video {self.id} by {self.user}"
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )

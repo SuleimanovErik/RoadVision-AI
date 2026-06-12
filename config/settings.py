@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'django_filters',
     'channels',
     "sslserver",
+    "django_extensions",
 
     # local apps
     'apps.core',
@@ -92,6 +93,8 @@ MIDDLEWARE = [
 
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+
+    "whitenoise.middleware.WhiteNoiseMiddleware",
 ]
 
 # ======================
@@ -120,10 +123,12 @@ DATABASES = {
 
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
     },
 }
-
 # ======================
 # PASSWORDS
 # ======================
@@ -145,11 +150,10 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# ======================
 # STATIC / MEDIA
-# ======================
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -230,5 +234,5 @@ SWAGGER_SETTINGS = {
             "description": "Вставь токен: Bearer <your_access_token>",
         }
     },
-    "USE_SESSION_AUTH": False,  # 🔥 убирает BasicAuth (логин/пароль)
+    "USE_SESSION_AUTH": False,
 }

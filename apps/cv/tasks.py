@@ -1,30 +1,36 @@
 from celery import shared_task
 from apps.images.models import RoadImage, RoadVideo
 from apps.cv.services import analyze_image, analyze_video
-from apps.defects.models import Defect
+from apps.defects.services import DefectService
 
 
 @shared_task
 def process_image_task(image_id):
-    image = RoadImage.objects.get(id=image_id)
+    try:
+        image = RoadImage.objects.get(id=image_id)
+    except RoadImage.DoesNotExist:
+        return
+
+    image.status = RoadImage.Status.PROCESSING
+    image.save(update_fields=["status"])
+
     response = analyze_image(image.image.path)
-    print("=== IMAGE CV RESULT ===", response)
 
     if "error" in response:
+        image.status = RoadImage.Status.FAILED
+        image.save(update_fields=["status"])
         image.delete()
         return
 
-    # Достаём вложенный result
     result = response.get("result", response)
     detections = result.get("detections", [])
 
     if not detections:
-        image.image.delete()
         image.delete()
         return
 
     for d in detections:
-        Defect.objects.create(
+        DefectService.create_defect(
             source_type="IMAGE",
             road_image=image,
             defect_type=d["class_name"].upper(),
@@ -35,24 +41,33 @@ def process_image_task(image_id):
             longitude=image.longitude,
         )
 
+    image.status = RoadImage.Status.COMPLETED
+    image.has_defects = True
+    image.save(update_fields=["status", "has_defects"])
+
 
 @shared_task
 def process_video_task(video_id):
-    video = RoadVideo.objects.get(id=video_id)
+    try:
+        video = RoadVideo.objects.get(id=video_id)
+    except RoadVideo.DoesNotExist:
+        return
+
+    video.status = RoadVideo.Status.PROCESSING
+    video.save(update_fields=["status"])
+
     response = analyze_video(video.video.path)
-    print("=== VIDEO CV RESULT ===", response)
 
     if "error" in response:
-        print("=== ERROR, deleting video ===")
+        video.status = RoadVideo.Status.FAILED
+        video.save(update_fields=["status"])
         video.delete()
         return
 
-    # Достаём вложенный result
     result = response.get("result", response)
     frames = result.get("results", [])
 
     if not frames:
-        print("=== NO FRAMES, deleting video ===")
         video.video.delete()
         video.delete()
         return
@@ -62,7 +77,7 @@ def process_video_task(video_id):
         timestamp = frame_data.get("timestamp")
         detections = frame_data.get("detections", [])
         for d in detections:
-            Defect.objects.create(
+            defect = DefectService.create_defect(
                 source_type="VIDEO",
                 road_video=video,
                 defect_type=d["class_name"].upper(),
@@ -73,8 +88,14 @@ def process_video_task(video_id):
                 longitude=video.longitude,
                 timestamp_in_video=timestamp,
             )
-            total_detections += 1
+            if defect:
+                total_detections += 1
 
     if total_detections == 0:
         video.video.delete()
         video.delete()
+        return
+
+    video.status = RoadVideo.Status.COMPLETED
+    video.has_defects = True
+    video.save(update_fields=["status", "has_defects"])

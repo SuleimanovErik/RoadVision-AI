@@ -43,7 +43,7 @@ class CameraSerializer(serializers.ModelSerializer):
 
     def validate_rtsp_url(self, value: str) -> str:
         value = value.strip()
-        if not value.startswith(("rtsp://", "rtsps://")):
+        if not value.startswith(("rtsp://", "rtsps://", "webcam://")):
             raise serializers.ValidationError(
                 "URL должен начинаться с rtsp:// или rtsps://. "
                 "Пример: rtsp://user:pass@192.168.1.1:554/stream"

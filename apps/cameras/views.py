@@ -1,6 +1,9 @@
-# views.py
+# apps/cameras/views.py
 from rest_framework import mixins, viewsets
 from rest_framework.permissions import IsAuthenticated
+
+from apps.users.permissions import IsOperator
+
 from .models import Camera
 from .serializers import CameraSerializer, CameraListSerializer
 
@@ -13,14 +16,14 @@ class CameraViewSet(
     viewsets.GenericViewSet,
 ):
     """
-    GET    /cameras/       — список камер
-    POST   /cameras/       — создать камеру
-    GET    /cameras/{id}/  — детально
-    DELETE /cameras/{id}/  — удалить
+    GET    /cameras/       — список камер (Operator + Admin)
+    POST   /cameras/       — создать камеру (Operator + Admin)
+    GET    /cameras/{id}/  — детально (Operator + Admin)
+    DELETE /cameras/{id}/  — удалить (Operator + Admin)
     """
 
     queryset = Camera.objects.all().order_by("name")
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsOperator]   # ← Только Оператор и Админ
 
     def get_serializer_class(self):
         if self.action == "list":

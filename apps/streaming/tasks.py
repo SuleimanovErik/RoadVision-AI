@@ -1,83 +1,20 @@
+import os
+import base64
 import logging
-import time
-import cv2
+import requests
 from celery import shared_task
 
 logger = logging.getLogger(__name__)
 
-
-@shared_task(bind=True, max_retries=3)
-def start_stream_task(self, session_id: int) -> None:
-    """Запускает RTSP-поток для сессии."""
-    from .models import StreamSession
-
-    try:
-        session = StreamSession.objects.select_related("camera").get(pk=session_id)
-    except StreamSession.DoesNotExist:
-        logger.error("StreamSession %d not found", session_id)
-        return
-
-    session.mark_running()
-    cap = cv2.VideoCapture(session.camera.rtsp_url)
-
-    if not cap.isOpened():
-        session.mark_error("Не удалось открыть RTSP-поток")
-        logger.error("Cannot open stream: %s", session.camera.rtsp_url)
-        return
-
-    # Сохраняем параметры потока
-    fps = cap.get(cv2.CAP_PROP_FPS) or 0
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    session.fps = fps
-    session.resolution = f"{width}x{height}"
-    session.save(update_fields=["fps", "resolution"])
-
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-    last_ping = time.time()
-    PING_INTERVAL = 5  # секунд
-
-    try:
-        while True:
-            # Проверяем не остановили ли сессию извне
-            session.refresh_from_db()
-            if not session.is_active:
-                logger.info("Session %d stopped externally", session_id)
-                break
-
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                session.mark_error("Потерян поток")
-                break
-
-            # Пингуем БД раз в PING_INTERVAL секунд
-            if time.time() - last_ping >= PING_INTERVAL:
-                session.ping()
-                last_ping = time.time()
-
-    except Exception as exc:
-        logger.exception("Stream error for session %d: %s", session_id, exc)
-        session.mark_error(str(exc))
-    finally:
-        cap.release()
-        if session.status == StreamSession.Status.RUNNING:
-            session.mark_stopped()
+CV_SERVICE_URL = os.environ.get('CV_SERVICE_URL', 'http://92.38.35.9:8080')
+CV_API_KEY = os.environ.get('INTERNAL_API_KEY', '')
 
 
-@shared_task
-def stop_stream_task(session_id: int) -> None:
-    """Останавливает сессию — Celery воркер сам завершит цикл."""
-    from .models import StreamSession
+def get_headers():
+    return {"X-API-Key": CV_API_KEY} if CV_API_KEY else {}
 
-    try:
-        session = StreamSession.objects.get(pk=session_id)
-        session.mark_stopped()
-        logger.info("Session %d marked as stopped", session_id)
-    except StreamSession.DoesNotExist:
-        logger.error("StreamSession %d not found", session_id)
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, default_retry_delay=5)
 def start_stream_task(self, session_id: int, rtsp_url: str) -> None:
     from .models import StreamSession
 
@@ -87,43 +24,118 @@ def start_stream_task(self, session_id: int, rtsp_url: str) -> None:
         logger.error("StreamSession %d not found", session_id)
         return
 
-    session.mark_running()
-    cap = cv2.VideoCapture(rtsp_url)
-
-    if not cap.isOpened():
-        session.mark_error(f"Не удалось открыть RTSP-поток: {rtsp_url}")
-        logger.error("Cannot open stream: %s", rtsp_url)
+    if rtsp_url == 'webcam://local':
+        session.mark_running()
+        logger.info("Session %d started as webcam (frontend)", session_id)
         return
 
-    fps = cap.get(cv2.CAP_PROP_FPS) or 0
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    session.fps = fps
-    session.resolution = f"{width}x{height}"
-    session.save(update_fields=["fps", "resolution"])
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-    last_ping = time.time()
+    session.mark_running()
 
     try:
-        while True:
-            session.refresh_from_db()
-            if not session.is_active:
-                break
+        r = requests.post(
+            f"{CV_SERVICE_URL}/rtsp/start",
+            json={"url": rtsp_url},
+            headers=get_headers(),
+            timeout=10,
+        )
+        if r.status_code != 200:
+            session.mark_error(f"CV error {r.status_code}: {r.text}")
+            logger.error("CV start failed session=%s status=%s body=%s",
+                         session_id, r.status_code, r.text)
+            return
+        logger.info("Session %d RTSP started via CV", session_id)
 
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                session.mark_error("Потерян поток")
-                break
-
-            if time.time() - last_ping >= 5:
-                session.ping()
-                last_ping = time.time()
-
-    except Exception as exc:
-        logger.exception("Stream error for session %d: %s", session_id, exc)
+    except requests.exceptions.RequestException as exc:
         session.mark_error(str(exc))
-    finally:
-        cap.release()
-        if session.status == StreamSession.Status.RUNNING:
-            session.mark_stopped()
+        logger.exception("CV service unreachable: %s", exc)
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True)
+def stop_stream_task(self, session_id: int) -> None:
+    from .models import StreamSession
+
+    try:
+        session = StreamSession.objects.get(pk=session_id)
+    except StreamSession.DoesNotExist:
+        logger.error("StreamSession %d not found", session_id)
+        return
+
+    try:
+        requests.post(f"{CV_SERVICE_URL}/rtsp/stop",
+                      headers=get_headers(), timeout=5)
+    except requests.exceptions.RequestException as e:
+        logger.warning("CV stop failed: %s", e)
+
+    session.mark_stopped()
+    logger.info("Session %d stopped", session_id)
+
+
+@shared_task
+def process_webcam_frame(frame_b64: str, latitude: float,
+                          longitude: float, session_id: int) -> None:
+    """Принимает кадр от фронта, отправляет в CV, сохраняет дефекты, пушит в WS."""
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+    from apps.defects.services import DefectService
+    from .models import StreamSession
+
+    try:
+        session = StreamSession.objects.get(pk=session_id)
+    except StreamSession.DoesNotExist:
+        logger.error("StreamSession %d not found", session_id)
+        return
+
+    frame_bytes = base64.b64decode(frame_b64)
+
+    try:
+        resp = requests.post(
+            f"{CV_SERVICE_URL}/detect/image",
+            headers=get_headers(),
+            files={"file": ("frame.jpg", frame_bytes, "image/jpeg")},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            logger.error("CV detect failed: %s %s", resp.status_code, resp.text)
+            return
+        data = resp.json()
+    except requests.exceptions.RequestException as e:
+        logger.error("CV service error: %s", e)
+        return
+
+    detections = data.get("result", {}).get("detections", [])
+    if not detections:
+        return
+
+    channel_layer = get_channel_layer()
+    group_name = f"stream_{session_id}"
+
+    for d in detections:
+        defect = DefectService.create_defect(
+            source_type="STREAM",
+            defect_type=d["class_name"].upper(),
+            confidence=d["confidence"],
+            bbox=d["bbox"],
+            severity=d["severity"],
+            latitude=latitude,
+            longitude=longitude,
+            stream_session=session,
+        )
+        if defect:
+            # пушим детекцию в WebSocket
+            async_to_sync(channel_layer.group_send)(
+                group_name,
+                {
+                    "type": "stream.detection",
+                    "data": {
+                        "defect_type": defect.defect_type,
+                        "confidence": defect.confidence,
+                        "bbox": defect.bbox,
+                        "severity": defect.severity,
+                        "latitude": float(defect.latitude),
+                        "longitude": float(defect.longitude),
+                    }
+                }
+            )
+            logger.info("Defect saved and pushed: %s session=%d",
+                        defect.defect_type, session_id)

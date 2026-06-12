@@ -1,10 +1,14 @@
-from rest_framework import mixins, viewsets, status
+# apps/reports/views.py
+from rest_framework import mixins, viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
+
+from apps.users.permissions import IsAdmin
 
 from .models import Report
-from .serializers import ReportSerializer
+from .serializers import ReportSerializer, ReportGenerateSerializer
 from .tasks import generate_report_task
 
 
@@ -14,41 +18,47 @@ class ReportViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """
-    GET    /reports/              — список отчётов
-    GET    /reports/{id}/         — детально
-    DELETE /reports/{id}/         — удалить
-    POST   /reports/generate/     — сгенерировать новый PDF
-    """
     queryset = Report.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdmin]   # ← Только Администратор
     serializer_class = ReportSerializer
+
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['status', 'severity']
 
     @action(detail=False, methods=["post"], url_path="generate")
     def generate(self, request):
-        # Фильтры из тела запроса
-        filters = {}
+        serializer = ReportGenerateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-        date_from = request.data.get("date_from")
-        date_to = request.data.get("date_to")
-        severity = request.data.get("severity")
-        source_type = request.data.get("source_type")
+        data = serializer.validated_data
 
-        if date_from:
-            filters["created_at__date__gte"] = date_from
-        if date_to:
-            filters["created_at__date__lte"] = date_to
-        if severity:
-            filters["severity"] = severity
-        if source_type:
-            filters["source_type"] = source_type
+        # Формируем красивый заголовок
+        title = "Отчёт по дефектам"
+        if data.get('severity') and data['severity'] != "all":
+            title += f" — {data['severity'].upper()}"
+        if data.get('date_from') or data.get('date_to'):
+            title += f" ({data.get('date_from') or '...'} — {data.get('date_to') or '...'})"
 
         report = Report.objects.create(
-            title=f"Отчёт по дефектам",
+            title=title,
             created_by=request.user,
+            date_from=data.get('date_from'),
+            date_to=data.get('date_to'),
+            severity=data.get('severity', 'all'),
         )
-        # Передаём фильтры в таск
+
+        filters = {}
+        if data.get('date_from'):
+            filters["created_at__date__gte"] = data['date_from']
+        if data.get('date_to'):
+            filters["created_at__date__lte"] = data['date_to']
+        if data.get('severity') and data['severity'] != "all":
+            if data['severity'] == "confirmed":
+                filters["status"] = "confirmed"
+            else:
+                filters["severity"] = data['severity']
+
         generate_report_task.delay(report.id, filters)
 
-        serializer = ReportSerializer(report, context={"request": request})
-        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+        output_serializer = ReportSerializer(report, context={"request": request})
+        return Response(output_serializer.data, status=status.HTTP_202_ACCEPTED)
