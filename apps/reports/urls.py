@@ -1,6 +1,10 @@
-from django.urls import path
-from .views import GenerateReportView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import ReportViewSet
+
+router = DefaultRouter()
+router.register(r"reports", ReportViewSet, basename="report")
 
 urlpatterns = [
-    path('generate/', GenerateReportView.as_view()),
+    path("", include(router.urls)),
 ]

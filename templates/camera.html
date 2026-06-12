@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RoadVision — Stream</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #111; color: #eee; min-height: 100vh; padding: 24px; }
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 20px; color: #fff; }
+  h2 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #666; margin-bottom: 10px; }
+  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 20px; max-width: 1100px; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+
+  /* video */
+  .video-box { background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16/9; position: relative; }
+  .video-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .video-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .video-label { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; padding: 4px 8px; border-radius: 5px; z-index: 10; }
+  .geo-label { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,.65); color: #4ade80; font-size: 10px; padding: 3px 7px; border-radius: 5px; z-index: 10; }
+
+  /* panel */
+  .panel { display: flex; flex-direction: column; gap: 14px; }
+  .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px; }
+  label { display: block; font-size: 11px; color: #777; margin-bottom: 3px; margin-top: 8px; }
+  label:first-child { margin-top: 0; }
+  input, select { width: 100%; background: #111; border: 1px solid #333; color: #eee; border-radius: 6px; padding: 7px 9px; font-size: 13px; outline: none; }
+  input:focus, select:focus { border-color: #555; }
+
+  /* buttons */
+  .btn { padding: 8px 12px; border-radius: 7px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s; width: 100%; }
+  .btn:disabled { opacity: .3; cursor: not-allowed; }
+  .btn:not(:disabled):hover { opacity: .82; }
+  .btn-blue { background: #2563eb; color: #fff; }
+  .btn-red  { background: #dc2626; color: #fff; }
+  .btn-gray { background: #252525; color: #ccc; border: 1px solid #333; }
+  .btn-sm   { padding: 5px 10px; width: auto; font-size: 12px; }
+  .btn-row  { display: flex; gap: 8px; margin-top: 8px; }
+  .btn-row .btn { flex: 1; }
+
+  /* tabs */
+  .tabs { display: flex; border: 1px solid #2a2a2a; border-radius: 7px; overflow: hidden; margin-bottom: 12px; }
+  .tab { flex: 1; background: none; border: none; color: #666; padding: 7px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .tab.active { background: #2563eb; color: #fff; }
+
+  /* defects */
+  .defect-item { padding: 5px 8px; margin: 3px 0; background: #1f1f1f; border-left: 3px solid #dc2626; border-radius: 4px; font-size: 11px; }
+  #defectsList { max-height: 120px; overflow-y: auto; margin-top: 6px; }
+
+  /* log */
+  #log { background: #0d0d0d; border: 1px solid #1f1f1f; border-radius: 6px; padding: 8px; font-size: 11px; font-family: monospace; height: 110px; overflow-y: auto; color: #34d399; }
+  .log-err  { color: #f87171; }
+  .log-info { color: #60a5fa; }
+
+  #authNote { font-size: 12px; text-align: center; margin-top: 6px; }
+  #videoMeta { margin-top: 8px; display: flex; gap: 10px; align-items: center; }
+  .interval-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #666; }
+  .interval-row select { width: auto; padding: 4px 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>RoadVision AI — Stream Monitor</h1>
+<div class="layout">
+
+  <div>
+    <div class="video-box" id="videoBox">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay"></canvas>
+      <span class="video-label" id="videoLabel">No source</span>
+      <span class="geo-label" id="geoLabel">📍 нет геолокации</span>
+    </div>
+    <div id="videoMeta">
+      <button class="btn btn-gray btn-sm" id="btnSnapshot">Snapshot</button>
+      <button class="btn btn-gray btn-sm" id="btnFullscreen">Fullscreen</button>
+      <span id="streamStatus" style="font-size:12px;color:#555;margin-left:4px;"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+
+    <div class="card">
+      <h2>Авторизация</h2>
+      <label>Email</label>
+      <input type="email" id="inputUser" placeholder="admin@example.com"/>
+      <label>Password</label>
+      <input type="password" id="inputPass" placeholder="password"/>
+      <div class="btn-row">
+        <button class="btn btn-blue" id="btnLogin">Войти</button>
+        <button class="btn btn-gray" id="btnLogout">Выйти</button>
+      </div>
+      <div id="authNote"></div>
+    </div>
+
+    <div class="card">
+      <h2>Источник видео</h2>
+      <div class="tabs">
+        <button class="tab active" id="tabWebcam" onclick="switchTab('webcam')">Веб-камера</button>
+        <button class="tab" id="tabRtsp" onclick="switchTab('rtsp')">RTSP / IP</button>
+      </div>
+
+      <div id="panelWebcam">
+        <label>Устройство</label>
+        <select id="selectCam"></select>
+        <div class="interval-row">
+          Отправка кадров:
+          <select id="frameInterval">
+            <option value="2000">каждые 2 сек</option>
+            <option value="5000" selected>каждые 5 сек</option>
+            <option value="10000">каждые 10 сек</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-blue" id="btnWebcam">Запустить веб-камеру</button>
+        </div>
+      </div>
+
+      <div id="panelRtsp" style="display:none">
+        <label>RTSP URL</label>
+        <input type="text" id="inputRtsp" placeholder="rtsp://192.168.1.100:554/stream"/>
+        <p style="font-size:11px;color:#555;margin-top:4px;">Обрабатывается сервером через Celery/YOLO</p>
+        <div class="btn-row">
+          <button class="btn btn-blue" id="btnSendRtsp">Отправить на сервер</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Детекции <span id="defectCount" style="color:#f87171;"></span></h2>
+      <div id="defectsList"><span style="color:#444;font-size:11px;">Ожидание...</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Лог</h2>
+      <div id="log"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const BASE = 'http://' + window.location.hostname + ':8000';
+let token = localStorage.getItem('rv_token') || '';
+const targetSessionId = 1; // Дефолтное ID сессии для тестов в обход списков
+
+// ── geo ───────────────────────────────────────────────────────────────────────
+let currentLat = null;
+let currentLng = null;
+
+(function startGeo() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(
+    function(pos) {
+      currentLat = pos.coords.latitude;
+      currentLng = pos.coords.longitude;
+      document.getElementById('geoLabel').textContent = '📍 ' + currentLat.toFixed(5) + ', ' + currentLng.toFixed(5);
+    },
+    function(err) {
+      document.getElementById('geoLabel').textContent = '📍 ' + err.message;
+    },
+    { enableHighAccuracy: true, maximumAge: 5000 }
+  );
+})();
+
+// ── utils ─────────────────────────────────────────────────────────────────────
+function log(msg, type) {
+  const el = document.getElementById('log');
+  const d = document.createElement('div');
+  d.className = type === 'err' ? 'log-err' : type === 'info' ? 'log-info' : '';
+  d.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function hdr() {
+  const h = { 'Content-Type': 'application/json' };
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+
+async function req(method, path, body) {
+  const opts = { method, headers: hdr() };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch(BASE + path, opts);
+    let data;
+    try { data = await r.json(); } catch { data = null; }
+    const ok = r.status >= 200 && r.status < 300;
+    log(method + ' ' + path + ' -> ' + r.status, ok ? '' : 'err');
+    return { ok, status: r.status, data };
+  } catch (e) {
+    log(method + ' ' + path + ' -> ' + e.message, 'err');
+    return { ok: false, data: null };
+  }
+}
+
+function setNote(msg, ok) {
+  const el = document.getElementById('authNote');
+  el.textContent = msg;
+  el.style.color = ok ? '#4ade80' : '#f87171';
+}
+
+// ── auth ──────────────────────────────────────────────────────────────────────
+document.getElementById('btnLogin').onclick = async function() {
+  const u = document.getElementById('inputUser').value.trim();
+  const p = document.getElementById('inputPass').value;
+  if (!u || !p) { log('Введи логин и пароль', 'err'); return; }
+  const r = await req('POST', '/api/auth/login/', { email: u, password: p });
+  if (r.ok && r.data && r.data.access) {
+    token = r.data.access;
+    localStorage.setItem('rv_token', token);
+    setNote('Авторизован: ' + u, true);
+    log('Токен получен', 'info');
+  } else {
+    setNote('Ошибка: ' + ((r.data && r.data.detail) || r.status), false);
+  }
+};
+
+document.getElementById('btnLogout').onclick = function() {
+  token = '';
+  localStorage.removeItem('rv_token');
+  setNote('Токен удалён', false);
+};
+
+if (token) setNote('Токен из localStorage', true);
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+var activeWs = null;
+var activeWsSessionId = null;
+
+function connectWs(sessionId) {
+  if (activeWs && activeWsSessionId === sessionId) return;
+  if (activeWs) { activeWs.close(); activeWs = null; }
+
+  const wsUrl = 'ws://' + window.location.hostname + ':8000/ws/stream/' + sessionId + '/';
+  log('WS → подписка на сессию #' + sessionId, 'info');
+  const ws = new WebSocket(wsUrl);
+  activeWs = ws;
+  activeWsSessionId = sessionId;
+
+  ws.onopen = function() {
+    log('WS соединение установлено', 'info');
+    document.getElementById('videoLabel').textContent = 'Stream #' + sessionId;
+  };
+
+  ws.onmessage = function(e) {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.error) { log('WS: ' + msg.error, 'err'); return; }
+      if (msg.defect_type) {
+        addDetection(msg);
+        drawBbox(msg.bbox, msg.defect_type, msg.confidence);
+      }
+    } catch(err) {
+      log('WS parse error: ' + err.message, 'err');
+    }
+  };
+
+  ws.onerror = function() { log('WS ошибка', 'err'); };
+  ws.onclose = function() {
+    log('WS отключён', '');
+    if (activeWsSessionId === sessionId) { activeWs = null; activeWsSessionId = null; }
+  };
+}
+
+function disconnectWs() {
+  if (activeWs) { activeWs.close(); activeWs = null; activeWsSessionId = null; }
+}
+
+// ── detections UI ─────────────────────────────────────────────────────────────
+var detectionCount = 0;
+
+function addDetection(d) {
+  detectionCount++;
+  document.getElementById('defectCount').textContent = '(' + detectionCount + ')';
+  const box = document.getElementById('defectsList');
+  const el = document.createElement('div');
+  el.className = 'defect-item ' + (d.severity || 'high');
+  el.textContent = d.defect_type + ' — ' + (d.confidence * 100).toFixed(1) + '%';
+  box.insertBefore(el, box.firstChild);
+  while (box.children.length > 20) box.removeChild(box.lastChild);
+}
+
+// ── bbox overlay ──────────────────────────────────────────────────────────────
+var bboxTimeout = null;
+
+function drawBbox(bbox, label, confidence) {
+  if (!bbox || bbox.length < 4) return;
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d');
+
+  canvas.width = video.videoWidth || canvas.offsetWidth;
+  canvas.height = video.videoHeight || canvas.offsetHeight;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const scaleX = canvas.width / (video.videoWidth || canvas.width);
+  const scaleY = canvas.height / (video.videoHeight || canvas.height);
+
+  const x1 = bbox[0] * scaleX, y1 = bbox[1] * scaleY;
+  const x2 = bbox[2] * scaleX, y2 = bbox[3] * scaleY;
+
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+  ctx.fillStyle = '#ef4444';
+  ctx.font = '12px monospace';
+  const text = label + ' ' + (confidence * 100).toFixed(0) + '%';
+  ctx.fillRect(x1, y1 - 18, ctx.measureText(text).width + 8, 18);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, x1 + 4, y1 - 4);
+
+  if (bboxTimeout) clearTimeout(bboxTimeout);
+  bboxTimeout = setTimeout(function() { ctx.clearRect(0, 0, canvas.width, canvas.height); }, 3000);
+}
+
+// ── webcam + frame sending ────────────────────────────────────────────────────
+var camStream = null;
+var frameTimer = null;
+var frameCanvas = document.createElement('canvas');
+
+function stopFrameSending() {
+  if (frameTimer) { clearInterval(frameTimer); frameTimer = null; }
+}
+
+function startFrameSending(sessionId) {
+  stopFrameSending();
+  const interval = parseInt(document.getElementById('frameInterval').value);
+  frameTimer = setInterval(function() { sendFrame(sessionId); }, interval);
+  log('Запущена отправка кадров в YOLO (' + (interval / 1000) + 'с)', 'info');
+}
+
+function sendFrame(sessionId) {
+  const video = document.getElementById('video');
+  if (!video.srcObject || video.videoWidth === 0) return;
+
+  frameCanvas.width = video.videoWidth;
+  frameCanvas.height = video.videoHeight;
+  frameCanvas.getContext('2d').drawImage(video, 0, 0);
+
+  frameCanvas.toBlob(async function(blob) {
+    if (!blob) return;
+    const reader = new FileReader();
+    reader.onloadend = async function() {
+      const base64 = reader.result.split(',')[1];
+      await req('POST', '/api/streaming/streaming/' + sessionId + '/frame/', {
+        frame: base64,
+        latitude: currentLat || 0.0,
+        longitude: currentLng || 0.0
+      });
+    };
+    reader.readAsDataURL(blob);
+  }, 'image/jpeg', 0.8);
+}
+
+(async function enumCams() {
+  try {
+    await navigator.mediaDevices.getUserMedia({ video: true });
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const sel = document.getElementById('selectCam');
+    sel.innerHTML = '';
+    devs.filter(function(d) { return d.kind === 'videoinput'; }).forEach(function(d, i) {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || 'Камера ' + (i + 1);
+      sel.appendChild(o);
+    });
+  } catch(e) { log('Ошибка перечисления камер: ' + e.message, 'err'); }
+})();
+
+document.getElementById('btnWebcam').onclick = async function() {
+  const btn = document.getElementById('btnWebcam');
+
+  if (camStream) {
+    camStream.getTracks().forEach(function(t) { t.stop(); });
+    camStream = null;
+    document.getElementById('video').srcObject = null;
+    document.getElementById('videoLabel').textContent = 'No source';
+    document.getElementById('streamStatus').textContent = '';
+    btn.textContent = 'Запустить веб-камеру';
+    btn.className = 'btn btn-blue';
+    stopFrameSending();
+    disconnectWs();
+    log('Поток остановлен', 'info');
+    return;
+  }
+
+  const deviceId = document.getElementById('selectCam').value;
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: deviceId ? { deviceId: { exact: deviceId } } : true
+    });
+    document.getElementById('video').srcObject = camStream;
+    document.getElementById('videoLabel').textContent = 'Webcam (Активна)';
+    document.getElementById('streamStatus').textContent = 'Поток идет напрямую';
+    btn.textContent = 'Остановить веб-камеру';
+    btn.className = 'btn btn-red';
+    log('Браузер захватил видеопоток', 'info');
+
+    connectWs(targetSessionId);
+    await req('POST', '/api/streaming/streaming/' + targetSessionId + '/start/', { rtsp_url: 'webcam://local' });
+    setTimeout(function() { startFrameSending(targetSessionId); }, 1000);
+
+  } catch(e) {
+    log('Ошибка доступа к камере: ' + e.message, 'err');
+  }
+};
+
+// ── RTSP Прямой запуск ────────────────────────────────────────────────────────
+document.getElementById('btnSendRtsp').onclick = async function() {
+  const url = document.getElementById('inputRtsp').value.trim();
+  if (!url) { log('Введи RTSP URL', 'err'); return; }
+
+  log('Отправка RTSP потока на сервер...', 'info');
+  document.getElementById('videoLabel').textContent = 'RTSP Stream';
+
+  // Подключаем WS для прослушивания ответов от Celery по этой сессии
+  connectWs(targetSessionId);
+
+  // Шлем запрос на старт сессии с указанным URL
+  await req('POST', '/api/streaming/streaming/' + targetSessionId + '/start/', { rtsp_url: url });
+};
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+function switchTab(t) {
+  document.getElementById('panelWebcam').style.display = t === 'webcam' ? '' : 'none';
+  document.getElementById('panelRtsp').style.display   = t === 'rtsp'   ? '' : 'none';
+  document.getElementById('tabWebcam').classList.toggle('active', t === 'webcam');
+  document.getElementById('tabRtsp').classList.toggle('active', t === 'rtsp');
+}
+
+document.getElementById('btnSnapshot').onclick = function() {
+  const v = document.getElementById('video');
+  if (!v.srcObject) { log('Нет видео', 'err'); return; }
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  const a = document.createElement('a');
+  a.href = c.toDataURL('image/png');
+  a.download = 'snap_' + Date.now() + '.png';
+  a.click();
+  log('Снимок сохранён', 'info');
+};
+
+document.getElementById('btnFullscreen').onclick = function() {
+  var box = document.getElementById('videoBox');
+  if (box.requestFullscreen) box.requestFullscreen();
+};
+</script>
+</body>
+</html>

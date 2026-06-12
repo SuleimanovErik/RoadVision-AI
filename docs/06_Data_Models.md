@@ -156,6 +156,15 @@
 - `created_at`
 
 ---
+**Поля:**
+- `id`
+- `main_defect` (ForeignKey → Defect)
+- `cluster_key`
+- `center_latitude`, `center_longitude`
+- `radius_meters` (по умолчанию 8)
+- `created_at`
+
+---
 
 ### 8. `Report` (Отчёты)
 

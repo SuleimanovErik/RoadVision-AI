@@ -1,7 +1,10 @@
-from django.urls import path
-from .views import StartStreamView, StopStreamView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import StreamSessionViewSet
+
+router = DefaultRouter()
+router.register(r"streaming", StreamSessionViewSet, basename="streaming")
 
 urlpatterns = [
-    path('start/', StartStreamView.as_view()),
-    path('stop/', StopStreamView.as_view()),
+    path("", include(router.urls)),
 ]

@@ -1,17 +1,31 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+# apps/cameras/views.py
+from rest_framework import mixins, viewsets
+from rest_framework.permissions import IsAuthenticated
 
-# Create your views here.
+from apps.users.permissions import IsOperator
 
-class CameraListCreateView(APIView):
-    def get(self, request):
-        return Response({"message": "List cameras"})
-
-    def post(self, request):
-        return Response({"message": "Camera created"}, status=status.HTTP_201_CREATED)
+from .models import Camera
+from .serializers import CameraSerializer, CameraListSerializer
 
 
-class CameraDeleteView(APIView):
-    def delete(self, request, pk):
-        return Response({"message": f"Camera {pk} deleted"})
+class CameraViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    GET    /cameras/       — список камер (Operator + Admin)
+    POST   /cameras/       — создать камеру (Operator + Admin)
+    GET    /cameras/{id}/  — детально (Operator + Admin)
+    DELETE /cameras/{id}/  — удалить (Operator + Admin)
+    """
+
+    queryset = Camera.objects.all().order_by("name")
+    permission_classes = [IsAuthenticated, IsOperator]   # ← Только Оператор и Админ
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return CameraListSerializer
+        return CameraSerializer
